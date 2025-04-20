@@ -166,7 +166,7 @@ Web前端提供用户友好的界面，展示服务器状态和性能指标，�
 
 1. 克隆仓库
 ```bash
-git clone https://github.com/yourusername/linux-monitor.git
+git clone https://github.com/creamcroissant/linux-monitor.git
 cd linux-monitor
 ```
 
@@ -620,8 +620,7 @@ DELETE /api/admin/users/:username
 
 如有问题或建议，请通过以下方式联系：
 
-- 电子邮件：your-email@example.com
-- GitHub Issues：https://github.com/yourusername/linux-monitor/issues
+- GitHub Issues：https://github.com/creamcroissant/linux-monitor/issues
 
 ---
 
