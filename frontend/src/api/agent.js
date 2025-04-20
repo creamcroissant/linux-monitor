@@ -53,7 +53,8 @@ api.interceptors.response.use(
       if (status === 401) {
         // 未授权，清除token并重定向到登录页
         localStorage.removeItem('token')
-        window.location.href = '/login'
+        localStorage.removeItem('user')
+        window.location.href = '/#/'
       }
     } else if (error.request) {
       // 请求已发出但没有收到响应
@@ -72,14 +73,36 @@ export default {
   // 获取所有代理
   async getAgents() {
     try {
+      console.log('开始获取代理列表...')
+      const token = localStorage.getItem('token')
+      console.log('使用的token (前10字符):', token ? token.substring(0, 10) + '...' : '无token')
+      
       const response = await api.get('/agents')
-      if (!Array.isArray(response.data)) {
-        throw new Error('Invalid agents data format')
+      console.log('获取代理列表API响应:', response.status, response.statusText)
+      
+      if (!response.data) {
+        console.error('代理列表响应数据为空')
+        return []
       }
+      
+      if (!Array.isArray(response.data)) {
+        console.error('代理列表数据格式不正确，应为数组:', response.data)
+        return []
+      }
+      
+      console.log(`成功获取代理列表，共 ${response.data.length} 个代理:`, response.data)
       return response.data
     } catch (error) {
-      console.error('Failed to fetch agents:', error)
-      throw error
+      console.error('获取代理列表失败:', error)
+      console.error('错误详情:', error.response?.data || error.message)
+      if (error.response?.status === 401) {
+        // 未授权，清除token并重定向到登录页
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        console.log('检测到401未授权错误，重定向到登录页')
+        window.location.href = '/#/'
+      }
+      return []
     }
   },
   

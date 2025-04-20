@@ -22,6 +22,17 @@
       </div>
     </div>
     
+    <!-- 错误提示 -->
+    <el-alert
+      v-if="error"
+      :title="error"
+      type="error"
+      :closable="true"
+      show-icon
+      style="margin: 0 20px 20px 20px;"
+      @close="clearError"
+    />
+    
     <!-- 主要内容 -->
     <el-row :gutter="20">
       <!-- 概览卡片 -->
@@ -79,10 +90,21 @@
                 <el-icon><RefreshRight /></el-icon>
                 刷新
               </el-button>
-        </div>
+            </div>
           </template>
           
+          <!-- 空状态 -->
+          <el-empty 
+            v-if="!loading && agents.length === 0" 
+            description="暂无服务器数据"
+          >
+            <template #default>
+              <el-button type="primary" @click="refreshData">刷新数据</el-button>
+            </template>
+          </el-empty>
+          
           <el-table
+            v-else
             :data="agents"
             style="width: 100%"
             v-loading="loading"
@@ -132,7 +154,7 @@
                   :status="getProgressStatus(getMetricValue(row.id, 'memory_percent'))"
                   :stroke-width="10"
                 />
-        </template>
+              </template>
             </el-table-column>
             
             <el-table-column label="磁盘使用率" min-width="120">
@@ -175,6 +197,7 @@ import {
   User
 } from '@element-plus/icons-vue'
 import agentApi from '@/api/agent'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const store = useStore()
@@ -190,6 +213,14 @@ const onlineAgents = computed(() => agents.value.filter(agent => agent.is_online
 const offlineAgents = computed(() => agents.value.filter(agent => !agent.is_online).length)
 const currentUser = computed(() => store.state.user || {})
 const isAdmin = computed(() => currentUser.value && currentUser.value.role === 'admin')
+
+// 获取错误信息
+const error = computed(() => store.state.error)
+
+// 清除错误
+const clearError = () => {
+  store.commit('CLEAR_ERROR')
+}
 
 // 下拉菜单命令处理
 const handleCommand = (command) => {
@@ -208,11 +239,30 @@ const handleCommand = (command) => {
 const fetchAgents = async () => {
   loading.value = true
   try {
-    await store.dispatch('fetchAgents')
+    console.log('开始获取代理列表，Dashboard组件...')
+    const agentsData = await store.dispatch('fetchAgents')
+    console.log('Dashboard获取到的代理列表:', agentsData)
+    
+    // 检查数据是否为空数组，为空时显示提示
+    if (Array.isArray(agentsData) && agentsData.length === 0) {
+      console.log('Dashboard: 代理列表为空')
+      ElMessage.info('当前没有已注册的代理')
+    } else if (Array.isArray(agentsData)) {
+      console.log(`Dashboard: 获取到${agentsData.length}个代理`)
+      
+      // 打印每个代理的基本信息，方便调试
+      agentsData.forEach((agent, index) => {
+        console.log(`Dashboard: 代理 ${index+1}: ID=${agent.id}, 主机名=${agent.hostname}`)
+      })
+    }
+    
     // 获取每个代理的最新指标
-    await fetchAllAgentMetrics()
+    if (agentsData.length > 0) {
+      await fetchAllAgentMetrics()
+    }
   } catch (error) {
-    console.error('Failed to fetch agents:', error)
+    console.error('Dashboard: 获取代理列表失败:', error)
+    ElMessage.error('获取代理列表失败')
   } finally {
     loading.value = false
   }
@@ -221,9 +271,11 @@ const fetchAgents = async () => {
 // 获取所有在线代理的最新指标
 const fetchAllAgentMetrics = async () => {
   const onlineAgentsList = agents.value.filter(agent => agent.is_online)
+  console.log('获取在线代理的指标数据, 在线代理数量:', onlineAgentsList.length)
   
   for (const agent of onlineAgentsList) {
     try {
+      console.log(`开始获取代理 ${agent.id} 的指标数据...`)
       // 获取过去5分钟的指标
       const now = Math.floor(Date.now() / 1000)
       const fiveMinutesAgo = now - 300
@@ -236,11 +288,15 @@ const fetchAllAgentMetrics = async () => {
       }
       
       const metrics = await agentApi.getAgentMetrics(agent.id, params)
+      console.log(`代理 ${agent.id} 的指标数据:`, metrics)
+      
       if (metrics && metrics.length > 0) {
         agentMetrics.value[agent.id] = metrics[0]
+      } else {
+        console.log(`代理 ${agent.id} 没有有效的指标数据`)
       }
     } catch (error) {
-      console.error(`Failed to fetch metrics for agent ${agent.id}:`, error)
+      console.error(`获取代理 ${agent.id} 的指标失败:`, error)
     }
   }
 }
@@ -334,12 +390,14 @@ const timeSince = (date) => {
 
 // 生命周期钩子
 onMounted(() => {
+  console.log('Dashboard组件已挂载，开始获取数据')
   fetchAgents()
   // 每60秒自动刷新一次
   refreshInterval.value = setInterval(refreshData, 60000)
 })
 
 onUnmounted(() => {
+  console.log('Dashboard组件已卸载，清除定时器')
   if (refreshInterval.value) {
     clearInterval(refreshInterval.value)
   }

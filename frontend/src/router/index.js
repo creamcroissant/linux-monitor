@@ -3,7 +3,8 @@ import { createRouter, createWebHistory, createWebHashHistory } from 'vue-router
 const routes = [
   {
     path: '/',
-    redirect: '/login', // 根路径重定向到登录页
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
     meta: { requiresAuth: false }
   },
   {
@@ -32,8 +33,7 @@ const routes = [
   },
   {
     path: '/login',
-    name: 'Login',
-    component: () => import('@/views/Login.vue')
+    redirect: '/'
   }
 ]
 
@@ -50,12 +50,12 @@ router.beforeEach((to, from, next) => {
   
   // 访问需要认证的页面但未登录时重定向到登录页
   if (to.meta.requiresAuth && !isAuthenticated) {
-    next({ name: 'Login', query: { redirect: to.fullPath } })
+    next({ path: '/', query: { redirect: to.fullPath } })
     return
   }
   
   // 如果用户已登录且访问的是登录页，重定向到仪表盘
-  if (to.name === 'Login' && isAuthenticated) {
+  if ((to.path === '/' || to.path === '/login') && isAuthenticated) {
     next({ name: 'Dashboard' })
     return
   }
@@ -71,7 +71,7 @@ router.beforeEach((to, from, next) => {
           return
         }
       } catch (e) {
-        next({ name: 'Login' })
+        next({ path: '/' })
         return
       }
     }

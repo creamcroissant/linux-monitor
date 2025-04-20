@@ -1,0 +1,12 @@
+--2025-04-20 11:41:58--  http://localhost:5175/
+Resolving localhost (localhost)... ::1, 127.0.0.1
+Connecting to localhost (localhost)|::1|:5175... failed: Connection refused.
+Connecting to localhost (localhost)|127.0.0.1|:5175... connected.
+HTTP request sent, awaiting response... Read error (Connection reset by peer) in headers.
+Retrying.
+
+--2025-04-20 11:43:59--  (try: 2)  http://localhost:5175/
+Connecting to localhost (localhost)|127.0.0.1|:5175... failed: Connection refused.
+Resolving localhost (localhost)... ::1, 127.0.0.1
+Connecting to localhost (localhost)|::1|:5175... failed: Connection refused.
+Connecting to localhost (localhost)|127.0.0.1|:5175... failed: Connection refused.

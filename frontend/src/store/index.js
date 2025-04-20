@@ -49,13 +49,45 @@ export default createStore({
       commit('SET_LOADING', true)
       try {
         commit('CLEAR_ERROR')
+        console.log('Vuex 开始获取代理列表...')
+        
+        // 检查 token 是否存在
+        const token = localStorage.getItem('token')
+        if (!token) {
+          console.error('没有发现认证token，无法获取代理列表')
+          throw new Error('未授权')
+        }
+        
         const agents = await agentApi.getAgents()
-        commit('SET_AGENTS', agents)
-        return agents
+        
+        // 确保代理列表是有效的数组
+        if (Array.isArray(agents)) {
+          console.log(`Vuex 成功获取代理列表，数量: ${agents.length}`)
+          
+          // 直接打印每个代理的详细信息，便于调试
+          agents.forEach((agent, index) => {
+            console.log(`代理 ${index+1}: ID=${agent.id}, 名称=${agent.name}, 在线=${agent.is_online}, 系统=${agent.platform}`)
+          })
+          
+          commit('SET_AGENTS', agents)
+          return agents
+        } else {
+          console.error('代理列表格式错误，期望数组但收到:', agents)
+          commit('SET_AGENTS', [])
+          return []
+        }
       } catch (error) {
         const message = error.response?.data?.error || error.message || '获取代理列表失败'
+        console.error('Vuex 获取代理列表错误:', message)
+        console.error('错误详情:', error)
+        
+        if (error.response?.status === 401) {
+          console.log('检测到401未授权错误，清除认证信息')
+          commit('LOGOUT')
+        }
+        
         commit('SET_ERROR', message)
-        console.error('Error fetching agents:', error)
+        commit('SET_AGENTS', []) // 确保置空代理列表
         return []
       } finally {
         commit('SET_LOADING', false)
@@ -74,14 +106,25 @@ export default createStore({
         }
         
         // 确保token设置正确
-        commit('SET_TOKEN', response.data.token)
-        commit('SET_USER', response.data.user)
+        const token = response.data.token
+        commit('SET_TOKEN', token)
         
-        // 验证设置是否生效
-        console.log('登录后，token已设置:', {
-          storeToken: store.state.token,
-          localStorageToken: localStorage.getItem('token')
-        })
+        // 确保用户数据存储正确
+        if (response.data.user) {
+          commit('SET_USER', response.data.user)
+        } else {
+          // 尝试获取用户信息
+          try {
+            const userResponse = await axios.get('/api/users/me', {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            })
+            commit('SET_USER', userResponse.data)
+          } catch (userError) {
+            console.error('获取用户信息失败:', userError)
+          }
+        }
         
         ElMessage.success('登录成功')
         return response.data

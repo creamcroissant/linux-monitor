@@ -50,7 +50,8 @@ userApi.interceptors.response.use(
       if (status === 401) {
         // 未授权，清除token并重定向到登录页
         localStorage.removeItem('token')
-        window.location.href = '/login'
+        localStorage.removeItem('user')
+        window.location.href = '/#/'
       }
     } else if (error.request) {
       // 请求已发出但没有收到响应

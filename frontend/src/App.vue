@@ -15,21 +15,32 @@ const router = useRouter()
 
 // 页面加载时检查登录状态
 onMounted(() => {
+  console.log('App mounted, checking authentication state')
+  
   // 从 localStorage 读取 token
   const token = localStorage.getItem('token')
   const userStr = localStorage.getItem('user')
+  
+  console.log('从localStorage读取的token:', token ? token.substring(0, 10) + '...' : 'null')
+  console.log('从localStorage读取的user:', userStr ? '有用户数据' : 'null')
   
   // 如果有 token 但 vuex 中没有用户信息，尝试恢复会话
   if (token && !store.state.user && userStr) {
     try {
       const user = JSON.parse(userStr)
+      console.log('恢复会话状态，用户名:', user.username)
       store.commit('SET_TOKEN', token)
       store.commit('SET_USER', user)
     } catch (e) {
-      console.error('Failed to restore session:', e)
+      console.error('会话恢复失败:', e)
       localStorage.removeItem('token')
       localStorage.removeItem('user')
+      router.push('/')
     }
+  } else if (!token && router.currentRoute.value.meta.requiresAuth) {
+    // 如果没有token但当前路由需要认证，重定向到登录页
+    console.log('没有有效的认证令牌，重定向到登录页')
+    router.push('/')
   }
 })
 </script>
