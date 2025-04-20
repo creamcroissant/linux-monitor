@@ -1,7 +1,0 @@
-{
-  "port": 8080,
-  "db_path": "./linux-monitor.db",
-  "encryption_key": "default-encryption-key-change-me",
-  "api_key": "change-me-in-production",
-  "jwt_secret": "3ef8adb5-f4f2-48a8-bee7-6a395f1f2605"
-}
