@@ -184,21 +184,34 @@ func main() {
 	// WebSocket处理器
 	r.GET("/ws", handleWebSocket)                         // WebSocket连接处理
 	
+	// 添加基本首页
+	r.GET("/", func(c *gin.Context) {
+		// 重定向到前端应用
+		c.File("./dist/index.html")
+	})
+
 	// 为前端Vue应用提供静态文件服务
-	// 静态文件和资源处理
-	r.Static("/assets", "./frontend/dist/assets")
-	r.StaticFile("/favicon.ico", "./frontend/dist/favicon.ico")
-	r.StaticFile("/", "./frontend/dist/index.html")
+	r.Static("/assets", "./dist/assets")
+	r.GET("/favicon.ico", func(c *gin.Context) {
+		c.File("./dist/favicon.ico")
+	})
 	
-	// 处理前端路由，将非API路径都指向index.html
+	// 确保在所有路由之后，处理所有未匹配的路由
 	r.NoRoute(func(c *gin.Context) {
-		// 如果路径不是以/api开头，则返回前端入口文件
-		if !strings.HasPrefix(c.Request.URL.Path, "/api") {
-			c.File("./frontend/dist/index.html")
-			return
+		// 检查请求路径是否为静态资源
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/assets/") {
+			// 先尝试发送相对于dist目录的资源文件
+			assetPath := "./dist" + path
+			if _, err := os.Stat(assetPath); err == nil {
+				c.File(assetPath)
+				return
+			}
+			log.Printf("找不到静态资源: %s", assetPath)
 		}
-		// API路径的404由API处理器处理
-		c.JSON(http.StatusNotFound, gin.H{"error": "API路径不存在"})
+		
+		// 所有其他路由都返回index.html
+		c.File("./dist/index.html")
 	})
 
 	// 启动HTTP服务器
@@ -1832,7 +1845,7 @@ func getAgentMetrics(c *gin.Context) {
 	
 	log.Printf("时间范围内找到 %d 条代理 %s 的指标记录", rangeCount, agentID)
 	
-	// 如果时间范围内没有记录，直接返回空数组
+	// 如果时间范围内没有记录，返回空数组
 	if rangeCount == 0 {
 		log.Printf("指定时间范围内没有数据，返回空数组")
 		c.JSON(http.StatusOK, []map[string]interface{}{})
@@ -1926,7 +1939,7 @@ func getAgentMetrics(c *gin.Context) {
 	
 	log.Printf("成功获取代理 %s 的 %d 条指标记录", agentID, len(metrics))
 	
-	// 如果查询结果为空（理论上不应该发生，因为之前已经检查了），但以防万一
+	// 如果查询结果为空（理论上不应该发生，因为之前已经检查了），也返回空数组
 	if len(metrics) == 0 {
 		log.Printf("查询结果为空，返回空数组")
 		c.JSON(http.StatusOK, []map[string]interface{}{})
@@ -1936,6 +1949,11 @@ func getAgentMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, metrics)
 }
 
+// 生成模拟指标数据
+func generateFallbackMetrics(agentID string, timeFrom, timeTo int64, limit int) []map[string]interface{} {
+	log.Printf("请求的时间范围内没有数据，而不是生成模拟数据，返回空数组")
+	return []map[string]interface{}{}
+}
 
 // 加载配置文件
 func loadConfig(configFile string) (Config, error) {

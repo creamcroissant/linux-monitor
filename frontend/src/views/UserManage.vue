@@ -1,3 +1,15 @@
+<!--
+  用户管理页面组件
+  
+  这个页面用于管理系统用户，仅对管理员开放。
+  主要功能:
+  - 显示所有用户的列表
+  - 创建新用户（指定用户名、密码和角色）
+  - 删除现有用户（包括其他管理员账户）
+  - 显示用户的基本信息（用户名、角色、创建时间）
+  - 权限检查（只有管理员可访问）
+-->
+
 <template>
   <div class="user-manage-container">
     <el-card>
@@ -253,16 +265,6 @@ const createUser = async () => {
 
 // 确认删除
 const confirmDelete = (user) => {
-  if (user.username === 'admin') {
-    ElMessage.warning('不能删除管理员账户')
-    return
-  }
-  
-  if (user.username === currentUser.value.username) {
-    ElMessage.warning('不能删除当前登录的账户')
-    return
-  }
-  
   ElMessageBox.confirm(
     `确定要删除用户 ${user.username} 吗？此操作不可恢复。`,
     '删除确认',

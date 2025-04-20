@@ -1,3 +1,15 @@
+/*
+ * Vite前端构建工具配置文件
+ *
+ * 这个文件定义了Vite构建工具的配置选项，用于前端项目的开发和生产构建。
+ * 主要功能:
+ * - 配置Vue插件
+ * - 设置路径别名（@指向src目录）
+ * - 配置开发服务器选项（端口、代理设置等）
+ * - 配置生产构建选项（代码分割、压缩等）
+ * - 设置API代理，用于开发环境中请求后端服务
+ */
+
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'

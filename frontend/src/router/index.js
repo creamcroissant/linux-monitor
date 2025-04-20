@@ -1,3 +1,15 @@
+/*
+ * 路由配置文件
+ * 
+ * 这个文件定义了前端应用的路由配置，管理页面间的导航和访问控制。
+ * 主要功能:
+ * - 定义应用的所有路由及其对应的组件
+ * - 配置路由元信息（如权限要求）
+ * - 实现全局路由守卫，处理用户认证和授权
+ * - 处理登录状态的路由重定向
+ * - 使用hash模式路由确保兼容性
+ */
+
 import { createRouter, createWebHistory, createWebHashHistory } from 'vue-router'
 
 const routes = [
