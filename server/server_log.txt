@@ -1,0 +1,36 @@
+2025/04/17 20:41:57 检查agents表结构...
+[GIN-debug] [WARNING] Creating an Engine instance with the Logger and Recovery middleware already attached.
+
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] POST   /api/login                --> main.login (3 handlers)
+[GIN-debug] POST   /api/register             --> main.register (3 handlers)
+[GIN-debug] GET    /api/agents               --> main.getAgents (3 handlers)
+[GIN-debug] GET    /api/agents/:id           --> main.getAgentByID (3 handlers)
+[GIN-debug] GET    /api/agents/:id/metrics   --> main.getAgentMetrics (3 handlers)
+[GIN-debug] PUT    /api/agents/:id           --> main.updateAgent (4 handlers)
+[GIN-debug] DELETE /api/agents/:id           --> main.deleteAgent (4 handlers)
+[GIN-debug] GET    /api/users/me             --> main.getCurrentUser (4 handlers)
+[GIN-debug] PUT    /api/users/password       --> main.updatePassword (4 handlers)
+[GIN-debug] GET    /api/admin/users          --> main.getUsers (4 handlers)
+[GIN-debug] POST   /api/admin/users          --> main.createUser (4 handlers)
+[GIN-debug] DELETE /api/admin/users/:username --> main.deleteUser (4 handlers)
+[GIN-debug] GET    /ws                       --> main.handleWebSocket (3 handlers)
+[GIN-debug] GET    /                         --> main.main.func1 (3 handlers)
+[GIN-debug] GET    /assets/*filepath         --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (3 handlers)
+[GIN-debug] HEAD   /assets/*filepath         --> github.com/gin-gonic/gin.(*RouterGroup).createStaticHandler.func1 (3 handlers)
+[GIN-debug] GET    /favicon.ico              --> main.main.func2 (3 handlers)
+[GIN-debug] GET    /test-app                 --> main.main.func4 (3 handlers)
+2025/04/17 20:41:57 服务器启动，端口：18080
+[GIN-debug] [WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.
+Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.
+[GIN-debug] Listening and serving HTTP on :18080
+[GIN] 2025/04/17 - 20:42:08 | 200 |  390.765235ms |             ::1 | POST     "/api/login"
+2025/04/17 20:42:22 管理员API请求，Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwicm9sZSI6ImFkbWluIiwiZXhwIjoxNzQ0OTgwMTI4LCJpYXQiOjE3NDQ4OTM3Mjh9.98R4g9Bg7AdiKxXkK-cRRvrAbFVniExv3zdAt1EtbUQ
+2025/04/17 20:42:22 验证成功，用户: admin, 角色: admin
+2025/04/17 20:42:22 管理员权限验证通过: admin
+2025/04/17 20:42:22 请求获取用户列表
+2025/04/17 20:42:22 扫描用户数据错误: sql: Scan error on column index 2, name "last_login": converting NULL to int64 is unsupported
+[GIN] 2025/04/17 - 20:42:22 | 500 |     700.707µs |             ::1 | GET      "/api/admin/users"
