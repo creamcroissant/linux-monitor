@@ -246,13 +246,13 @@ func main() {
 		c.File("./dist/index.html")
 	})
 
+	// 启动自动告警任务
+	go alertTask()
+
 	// 启动HTTP服务器
 	addr := fmt.Sprintf(":%d", config.Port)
 	log.Printf("服务器启动，端口：%d", config.Port)
 	log.Fatal(r.Run(addr))
-
-	// 启动自动告警任务
-	go alertTask()
 }
 
 // Initialize the SQLite database
@@ -2129,6 +2129,7 @@ func sendServerChan(sendKey, title, desp string) ([]byte, error) {
 
 func alertTask() {
 	for {
+		log.Printf("[alertTask] 开始遍历agent状态...")
 		agents := []Agent{}
 		rows, err := db.Query("SELECT id, name, hostname, last_seen FROM agents")
 		if err == nil {
@@ -2141,11 +2142,11 @@ func alertTask() {
 			}
 			rows.Close()
 		}
+		log.Printf("[alertTask] 本轮共检测到 %d 个agent", len(agents))
 		// 获取webhook配置
 		webhookData, _ := ioutil.ReadFile("webhook.json")
 		var webhooks []Webhook
 		_ = json.Unmarshal(webhookData, &webhooks)
-		// 检查每个agent
 		for _, agent := range agents {
 			// 离线判定
 			if time.Since(agent.LastSeen) > 30*time.Second {
@@ -2154,7 +2155,18 @@ func alertTask() {
 					desp := fmt.Sprintf("Agent %s(%s) 已离线，最后在线时间：%s", agent.Name, agent.ID, agent.LastSeen.Format(time.RFC3339))
 					for _, wh := range webhooks {
 						if wh.Enabled && wh.Type == "serverchan" && wh.SendKey != "" {
-							_, _ = sendServerChan(wh.SendKey, title, desp)
+							body, err := sendServerChan(wh.SendKey, title, desp)
+							if err != nil {
+								log.Printf("[离线告警] Server酱推送失败: %v", err)
+							} else {
+								var resp struct{ Code int `json:"code"`; Message string `json:"message"` }
+								err2 := json.Unmarshal(body, &resp)
+								if err2 != nil || resp.Code != 0 {
+									log.Printf("[离线告警] Server酱响应异常: %s", string(body))
+								} else {
+									log.Printf("[离线告警] Server酱推送成功")
+								}
+							}
 						}
 					}
 					offlineAlerted[agent.ID] = true
@@ -2163,27 +2175,34 @@ func alertTask() {
 				offlineAlerted[agent.ID] = false
 			}
 			// 高负载判定（10分钟）
-			row := db.QueryRow("SELECT timestamp, cpu_usage FROM metrics WHERE agent_id = ? ORDER BY timestamp DESC LIMIT 1", agent.ID)
-			var ts int64
-			var cpu float64
-			_ = row.Scan(&ts, &cpu)
-			if cpu > 90 {
-				if highLoadStart[agent.ID] == 0 {
-					highLoadStart[agent.ID] = ts
-				}
-				if ts-highLoadStart[agent.ID] >= 600 && !highLoadAlerted[agent.ID] {
-					title := "Agent高负载告警"
-					desp := fmt.Sprintf("Agent %s(%s) 已高负载10分钟，当前CPU: %.2f%%", agent.Name, agent.ID, cpu)
-					for _, wh := range webhooks {
-						if wh.Enabled && wh.Type == "serverchan" && wh.SendKey != "" {
-							_, _ = sendServerChan(wh.SendKey, title, desp)
-						}
+			tenMinAgo := time.Now().Add(-10 * time.Minute).Unix()
+			rows, err := db.Query("SELECT cpu_usage FROM metrics WHERE agent_id = ? AND timestamp >= ? ORDER BY timestamp ASC", agent.ID, tenMinAgo)
+			if err == nil {
+				cpuHigh := true
+				count := 0
+				for rows.Next() {
+					var cpu float64
+					_ = rows.Scan(&cpu)
+					if cpu <= 90 {
+						cpuHigh = false
 					}
-					highLoadAlerted[agent.ID] = true
+					count++
 				}
-			} else {
-				highLoadStart[agent.ID] = 0
-				highLoadAlerted[agent.ID] = false
+				rows.Close()
+				if count > 0 && cpuHigh {
+					if !highLoadAlerted[agent.ID] {
+						title := "Agent高负载告警"
+						desp := fmt.Sprintf("Agent %s(%s) 已持续高负载10分钟，CPU均大于90%%", agent.Name, agent.ID)
+						for _, wh := range webhooks {
+							if wh.Enabled && wh.Type == "serverchan" && wh.SendKey != "" {
+								_, _ = sendServerChan(wh.SendKey, title, desp)
+							}
+						}
+						highLoadAlerted[agent.ID] = true
+					}
+				} else {
+					highLoadAlerted[agent.ID] = false
+				}
 			}
 		}
 		time.Sleep(60 * time.Second)
