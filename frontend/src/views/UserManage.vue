@@ -113,6 +113,55 @@
         </div>
       </template>
     </el-dialog>
+
+    <div v-if="isAdmin" class="webhook-settings">
+      <el-card>
+        <template #header>
+          <span>Webhook设置</span>
+          <el-button type="primary" size="small" @click="addWebhook">添加Webhook</el-button>
+        </template>
+        <el-table :data="webhooks" style="width: 100%">
+          <el-table-column prop="name" label="名称" />
+          <el-table-column prop="type" label="类型" />
+          <el-table-column prop="sendkey" label="Server酱API Key" v-if="colType==='serverchan'" />
+          <el-table-column prop="url" label="Webhook URL" v-if="colType==='custom'" />
+          <el-table-column label="操作">
+            <template #default="{ row, $index }">
+              <el-button size="small" @click="editWebhook($index)">编辑</el-button>
+              <el-button size="small" type="danger" @click="removeWebhook($index)">删除</el-button>
+              <el-button size="small" type="success" @click="testWebhook(row)">测试</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-dialog v-model="webhookDialogVisible" title="Webhook配置">
+          <el-form :model="webhookForm" label-width="100px">
+            <el-form-item label="名称">
+              <el-input v-model="webhookForm.name" />
+            </el-form-item>
+            <el-form-item label="类型">
+              <el-select v-model="webhookForm.type">
+                <el-option label="Server酱" value="serverchan" />
+                <el-option label="自定义Webhook" value="custom" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Server酱API Key" v-if="webhookForm.type==='serverchan'">
+              <el-input v-model="webhookForm.sendkey" />
+            </el-form-item>
+            <el-form-item label="Webhook URL" v-if="webhookForm.type==='custom'">
+              <el-input v-model="webhookForm.url" />
+            </el-form-item>
+            <el-form-item label="启用">
+              <el-switch v-model="webhookForm.enabled" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="webhookDialogVisible=false">取消</el-button>
+            <el-button type="primary" @click="saveWebhook">保存</el-button>
+          </template>
+        </el-dialog>
+        <el-button type="primary" @click="saveAllWebhooks" style="margin-top:16px">保存所有Webhook</el-button>
+      </el-card>
+    </div>
   </div>
 </template>
 
@@ -124,6 +173,7 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import userApi from '@/api/user'
 import { Plus, ArrowLeft } from '@element-plus/icons-vue'
+import agentApi from '@/api/agent'
 
 const store = useStore()
 const router = useRouter()
@@ -132,6 +182,12 @@ const creating = ref(false)
 const dialogVisible = ref(false)
 const users = ref([])
 const formRef = ref(null)
+const isAdmin = computed(() => store.state.user && store.state.user.role === 'admin')
+const webhooks = ref([])
+const webhookDialogVisible = ref(false)
+const webhookForm = ref({ name: '', type: 'serverchan', sendkey: '', url: '', enabled: true })
+let editIndex = -1
+const colType = ref('')
 
 const form = ref({
   username: '',
@@ -296,9 +352,55 @@ const deleteUser = async (username) => {
   }
 }
 
+const loadWebhooks = async () => {
+  webhooks.value = await agentApi.getWebhook()
+}
+const addWebhook = () => {
+  webhookForm.value = { name: '', type: 'serverchan', sendkey: '', url: '', enabled: true }
+  editIndex = -1
+  webhookDialogVisible.value = true
+}
+const editWebhook = (idx) => {
+  webhookForm.value = { ...webhooks.value[idx] }
+  editIndex = idx
+  webhookDialogVisible.value = true
+}
+const removeWebhook = (idx) => {
+  webhooks.value.splice(idx, 1)
+}
+const testWebhook = async (webhook) => {
+  try {
+    const res = await agentApi.testWebhook(webhook)
+    if (res.message === 'SUCCESS') {
+      ElMessage.success('Webhook测试成功')
+    } else {
+      ElMessage.error('Webhook测试失败: ' + (res.detail || res.raw || '未知错误'))
+    }
+  } catch (e) {
+    ElMessage.error('Webhook测试请求异常')
+  }
+}
+const saveWebhook = () => {
+  if (editIndex === -1) {
+    webhooks.value.push({ ...webhookForm.value })
+  } else {
+    webhooks.value[editIndex] = { ...webhookForm.value }
+  }
+  webhookDialogVisible.value = false
+}
+const saveAllWebhooks = async () => {
+  await agentApi.setWebhook(webhooks.value)
+  ElMessage.success('Webhook已保存')
+  // 保存后自动测试所有已启用webhook
+  for (const wh of webhooks.value) {
+    if (wh.enabled) await testWebhook(wh)
+  }
+}
+
 // 生命周期钩子
 onMounted(() => {
   fetchUsers()
+  loadWebhooks()
 })
 </script>
 
@@ -328,4 +430,6 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
 }
+
+.webhook-settings { margin-top: 32px; }
 </style> 

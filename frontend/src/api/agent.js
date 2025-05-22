@@ -194,5 +194,23 @@ export default {
       console.error(`Failed to delete agent ${id}:`, error)
       throw error
     }
+  },
+  
+  // 获取webhook配置
+  async getWebhook() {
+    const response = await api.get('/webhook')
+    return response.data
+  },
+  
+  // 设置webhook配置
+  async setWebhook(webhooks) {
+    const response = await api.put('/webhook', webhooks)
+    return response.data
+  },
+  
+  // 测试webhook
+  async testWebhook(webhook) {
+    const response = await api.post('/webhook/test', webhook)
+    return response.data
   }
 } 

@@ -80,7 +80,7 @@
         </el-form-item>
         
         <el-form-item label="主机名">
-          <el-input v-model="editForm.hostname" disabled />
+          <el-input v-model="editForm.hostname" />
         </el-form-item>
         
         <el-form-item label="IP地址">
@@ -162,7 +162,8 @@ const saveAgent = async () => {
   saving.value = true
   try {
     await agentApi.updateAgent(editForm.value.id, {
-      name: editForm.value.name
+      name: editForm.value.name,
+      hostname: editForm.value.hostname
     })
     
     ElMessage.success('保存成功')

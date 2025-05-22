@@ -1,0 +1,8 @@
+[
+  {
+    "type": "serverchan",
+    "name": "自动告警",
+    "sendkey": "SCT191783THE23ZqVv5ICZCEdJ8s0luS1S",
+    "enabled": true
+  }
+]

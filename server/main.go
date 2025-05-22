@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
@@ -94,6 +95,10 @@ var (
 			return true // 允许任何来源的连接请求
 		},
 	}
+	// agent异常状态缓存
+	offlineAlerted = make(map[string]bool) // 离线告警缓存
+	highLoadStart = make(map[string]int64) // 高负载起始时间缓存
+	highLoadAlerted = make(map[string]bool) // 高负载告警缓存
 )
 
 // Claims JWT令牌的声明结构体
@@ -101,6 +106,15 @@ type Claims struct {
 	Username string `json:"username"` // 用户名
 	Role     string `json:"role"`     // 角色
 	jwt.RegisteredClaims              // JWT标准声明
+}
+
+// webhook结构体
+type Webhook struct {
+	Type    string `json:"type"` // serverchan/custom
+	Name    string `json:"name"`
+	SendKey string `json:"sendkey,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Enabled bool   `json:"enabled"`
 }
 
 // main 主函数，服务端程序入口
@@ -140,6 +154,19 @@ func main() {
 		log.Fatalf("初始化数据库失败：%v", err)
 	}
 	defer db.Close()
+
+	// 启动时自动生成hostname.json（如不存在）
+	hostnameFile := "hostname.json"
+	if _, err := os.Stat(hostnameFile); os.IsNotExist(err) {
+		data, _ := json.MarshalIndent(map[string]string{}, "", "  ")
+		_ = ioutil.WriteFile(hostnameFile, data, 0644)
+	}
+
+	// 启动时自动生成webhook.json（如不存在）
+	webhookFile := "webhook.json"
+	if _, err := os.Stat(webhookFile); os.IsNotExist(err) {
+		_ = ioutil.WriteFile(webhookFile, []byte("[]"), 0644)
+	}
 
 	// 设置Gin路由
 	r := gin.Default()
@@ -181,8 +208,13 @@ func main() {
 		adminApi.DELETE("/users/:username", deleteUser)   // 删除用户
 	}
 
+	// 新增webhook API路由
+	r.GET("/api/webhook", getWebhook) // 获取webhook配置
+	r.PUT("/api/webhook", adminMiddleware(), setWebhook) // 设置webhook配置
+	r.POST("/api/webhook/test", adminMiddleware(), testWebhook) // 测试webhook
+
 	// WebSocket处理器
-	r.GET("/ws", handleWebSocket)                         // WebSocket连接处理
+	r.GET("/ws", handleWebSocket) // WebSocket连接处理
 	
 	// 添加基本首页
 	r.GET("/", func(c *gin.Context) {
@@ -218,6 +250,9 @@ func main() {
 	addr := fmt.Sprintf(":%d", config.Port)
 	log.Printf("服务器启动，端口：%d", config.Port)
 	log.Fatal(r.Run(addr))
+
+	// 启动自动告警任务
+	go alertTask()
 }
 
 // Initialize the SQLite database
@@ -742,7 +777,18 @@ func getDiskPercent(diskInfo map[string]interface{}) float64 {
 func updateAgentInfo(agentID string, metrics SystemMetrics, remoteAddr string) {
 	// 获取当前时间戳
 	now := time.Now().Unix()
-	
+
+	// 1. 读取hostname.json
+	hostnameOverride := ""
+	hostnameMap := map[string]string{}
+	hostnameFile := "hostname.json"
+	if data, err := ioutil.ReadFile(hostnameFile); err == nil {
+		_ = json.Unmarshal(data, &hostnameMap)
+		if v, ok := hostnameMap[agentID]; ok && v != "" {
+			hostnameOverride = v
+		}
+	}
+
 	// 从系统信息中提取主机名和平台信息
 	var hostname, platform string
 	if metrics.SystemInfo != nil {
@@ -752,6 +798,10 @@ func updateAgentInfo(agentID string, metrics SystemMetrics, remoteAddr string) {
 		if p, ok := metrics.SystemInfo["platform"].(string); ok {
 			platform = p
 		}
+	}
+	// 优先使用hostname.json中的主机名
+	if hostnameOverride != "" {
+		hostname = hostnameOverride
 	}
 	
 	// 如果主机名或平台为空，设置默认值
@@ -1658,7 +1708,8 @@ func updateAgent(c *gin.Context) {
 	log.Printf("API call: %s %s (id: %s)", c.Request.Method, c.Request.URL.Path, agentID)
 
 	var updateData struct {
-		Name string `json:"name"`
+		Name     string `json:"name"`
+		Hostname string `json:"hostname"`
 	}
 
 	if err := c.ShouldBindJSON(&updateData); err != nil {
@@ -1681,15 +1732,28 @@ func updateAgent(c *gin.Context) {
 		return
 	}
 
-	// 更新代理名称
+	// 更新代理名称和主机名
 	now := time.Now().Unix()
-	result, err := db.Exec("UPDATE agents SET name = ?, updated_at = ? WHERE id = ?", updateData.Name, now, agentID)
+	result, err := db.Exec("UPDATE agents SET name = ?, hostname = ?, updated_at = ? WHERE id = ?", updateData.Name, updateData.Hostname, now, agentID)
 	if err != nil {
 		log.Printf("更新代理失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新代理失败", "detail": err.Error()})
 		return
 	}
-	
+
+	// 同步写入hostname.json
+	hostnameFile := "hostname.json"
+	hostnameMap := map[string]string{}
+	if data, err := ioutil.ReadFile(hostnameFile); err == nil {
+		_ = json.Unmarshal(data, &hostnameMap)
+	}
+	if updateData.Hostname != "" {
+		hostnameMap[agentID] = updateData.Hostname
+		if data, err := json.MarshalIndent(hostnameMap, "", "  "); err == nil {
+			_ = ioutil.WriteFile(hostnameFile, data, 0644)
+		}
+	}
+
 	rowsAffected, _ := result.RowsAffected()
 	log.Printf("已更新代理 %s, 影响行数: %d", agentID, rowsAffected)
 
@@ -2012,4 +2076,167 @@ func saveConfig(configFile string, config Config) error {
 	}
 	
 	return nil
+}
+
+// 获取webhook配置
+func getWebhook(c *gin.Context) {
+	data, err := ioutil.ReadFile("webhook.json")
+	if err != nil {
+		c.JSON(500, gin.H{"error": "无法读取webhook.json"})
+		return
+	}
+	var arr []Webhook
+	if err := json.Unmarshal(data, &arr); err != nil {
+		c.JSON(500, gin.H{"error": "webhook.json格式错误"})
+		return
+	}
+	c.JSON(200, arr)
+}
+
+// 设置webhook配置（仅管理员）
+func setWebhook(c *gin.Context) {
+	var arr []Webhook
+	if err := c.ShouldBindJSON(&arr); err != nil {
+		c.JSON(400, gin.H{"error": "参数无效"})
+		return
+	}
+	data, _ := json.MarshalIndent(arr, "", "  ")
+	_ = ioutil.WriteFile("webhook.json", data, 0644)
+	c.JSON(200, gin.H{"message": "已保存"})
+}
+
+// Server酱推送
+func sendServerChan(sendKey, title, desp string) ([]byte, error) {
+	apiUrl := fmt.Sprintf("https://sctapi.ftqq.com/%s.send", sendKey)
+	data := url.Values{}
+	data.Set("title", title)
+	data.Set("desp", desp)
+	log.Printf("[ServerChan] POST %s, title=%s, desp=%s", apiUrl, title, desp)
+	resp, err := http.PostForm(apiUrl, data)
+	if err != nil {
+		log.Printf("[ServerChan] 请求失败: %v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[ServerChan] 读取响应失败: %v", err)
+		return nil, err
+	}
+	log.Printf("[ServerChan] 响应: %s", string(body))
+	return body, nil
+}
+
+func alertTask() {
+	for {
+		agents := []Agent{}
+		rows, err := db.Query("SELECT id, name, hostname, last_seen FROM agents")
+		if err == nil {
+			for rows.Next() {
+				var a Agent
+				var lastSeenUnix int64
+				_ = rows.Scan(&a.ID, &a.Name, &a.Hostname, &lastSeenUnix)
+				a.LastSeen = time.Unix(lastSeenUnix, 0)
+				agents = append(agents, a)
+			}
+			rows.Close()
+		}
+		// 获取webhook配置
+		webhookData, _ := ioutil.ReadFile("webhook.json")
+		var webhooks []Webhook
+		_ = json.Unmarshal(webhookData, &webhooks)
+		// 检查每个agent
+		for _, agent := range agents {
+			// 离线判定
+			if time.Since(agent.LastSeen) > 30*time.Second {
+				if !offlineAlerted[agent.ID] {
+					title := "Agent离线告警"
+					desp := fmt.Sprintf("Agent %s(%s) 已离线，最后在线时间：%s", agent.Name, agent.ID, agent.LastSeen.Format(time.RFC3339))
+					for _, wh := range webhooks {
+						if wh.Enabled && wh.Type == "serverchan" && wh.SendKey != "" {
+							_, _ = sendServerChan(wh.SendKey, title, desp)
+						}
+					}
+					offlineAlerted[agent.ID] = true
+				}
+			} else {
+				offlineAlerted[agent.ID] = false
+			}
+			// 高负载判定（10分钟）
+			row := db.QueryRow("SELECT timestamp, cpu_usage FROM metrics WHERE agent_id = ? ORDER BY timestamp DESC LIMIT 1", agent.ID)
+			var ts int64
+			var cpu float64
+			_ = row.Scan(&ts, &cpu)
+			if cpu > 90 {
+				if highLoadStart[agent.ID] == 0 {
+					highLoadStart[agent.ID] = ts
+				}
+				if ts-highLoadStart[agent.ID] >= 600 && !highLoadAlerted[agent.ID] {
+					title := "Agent高负载告警"
+					desp := fmt.Sprintf("Agent %s(%s) 已高负载10分钟，当前CPU: %.2f%%", agent.Name, agent.ID, cpu)
+					for _, wh := range webhooks {
+						if wh.Enabled && wh.Type == "serverchan" && wh.SendKey != "" {
+							_, _ = sendServerChan(wh.SendKey, title, desp)
+						}
+					}
+					highLoadAlerted[agent.ID] = true
+				}
+			} else {
+				highLoadStart[agent.ID] = 0
+				highLoadAlerted[agent.ID] = false
+			}
+		}
+		time.Sleep(60 * time.Second)
+	}
+}
+
+func testWebhook(c *gin.Context) {
+	var wh Webhook
+	if err := c.ShouldBindJSON(&wh); err != nil {
+		log.Printf("[WebhookTest] 参数无效: %v", err)
+		c.JSON(400, gin.H{"error": "参数无效"})
+		return
+	}
+	log.Printf("[WebhookTest] 测试请求: %+v", wh)
+	title := "Webhook测试消息"
+	desp := "这是一条Webhook测试消息，说明配置已生效。"
+	if wh.Type == "serverchan" && wh.SendKey != "" {
+		body, err := sendServerChan(wh.SendKey, title, desp)
+		if err != nil {
+			log.Printf("[WebhookTest] Server酱推送失败: %v", err)
+			c.JSON(500, gin.H{"error": "Server酱推送失败", "detail": err.Error()})
+			return
+		}
+		var resp struct{ Code int `json:"code"`; Message string `json:"message"` }
+		err2 := json.Unmarshal(body, &resp)
+		if err2 != nil {
+			log.Printf("[WebhookTest] Server酱响应解析失败: %v, 原始: %s", err2, string(body))
+			c.JSON(200, gin.H{"message": "FAIL", "detail": "响应解析失败", "raw": string(body)})
+			return
+		}
+		log.Printf("[WebhookTest] Server酱响应解析: code=%d, message=%s", resp.Code, resp.Message)
+		if resp.Code == 0 {
+			c.JSON(200, gin.H{"message": "SUCCESS"})
+		} else {
+			c.JSON(200, gin.H{"message": "FAIL", "detail": resp.Message, "raw": string(body)})
+		}
+		return
+	}
+	if wh.Type == "custom" && wh.URL != "" {
+		body := map[string]string{"title": title, "desc": desp}
+		b, _ := json.Marshal(body)
+		log.Printf("[WebhookTest] POST %s, body=%s", wh.URL, string(b))
+		resp, err := http.Post(wh.URL, "application/json", strings.NewReader(string(b)))
+		if err != nil {
+			log.Printf("[WebhookTest] 自定义Webhook推送失败: %v", err)
+			c.JSON(500, gin.H{"error": "自定义Webhook推送失败", "detail": err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+		log.Printf("[WebhookTest] 自定义Webhook响应状态: %d", resp.StatusCode)
+		c.JSON(200, gin.H{"message": "SUCCESS"})
+		return
+	}
+	log.Printf("[WebhookTest] 不支持的Webhook类型或缺少必要参数: %+v", wh)
+	c.JSON(400, gin.H{"error": "不支持的Webhook类型或缺少必要参数"})
 }

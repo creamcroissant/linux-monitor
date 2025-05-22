@@ -23,6 +23,7 @@
           <el-tag :type="agent.is_online ? 'success' : 'danger'">
             {{ agent.is_online ? '在线' : '离线' }}
           </el-tag>
+          <el-button v-if="isAdmin" size="small" style="margin-left: 16px;" @click="openEditDialog">编辑</el-button>
         </div>
       </template>
       
@@ -193,6 +194,17 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+    <el-dialog v-model="editDialogVisible" title="编辑主机名" width="400px">
+      <el-form :model="editForm" label-width="80px">
+        <el-form-item label="主机名">
+          <el-input v-model="editForm.hostname" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveHostname" :loading="saving">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -224,6 +236,11 @@ const timeRange = ref(604800)     // 时间范围(秒)，默认显示7天数据
 const activeTab = ref('cpu')      // 当前激活的标签页
 const charts = ref({})            // 图表实例集合
 const refreshInterval = ref(null) // 自动刷新定时器
+const editDialogVisible = ref(false)
+const saving = ref(false)
+const editForm = ref({ hostname: '' })
+const currentUser = computed(() => store.state.user || {})
+const isAdmin = computed(() => currentUser.value && currentUser.value.role === 'admin')
 
 // 图表容器引用
 const cpuChart = ref(null)         // CPU图表容器引用
@@ -1416,6 +1433,25 @@ watch(timeRange, (newValue, oldValue) => {
     });
   }
 })
+
+function openEditDialog() {
+  editForm.value.hostname = agent.value.hostname
+  editDialogVisible.value = true
+}
+
+async function saveHostname() {
+  saving.value = true
+  try {
+    await agentApi.updateAgent(agent.value.id, { hostname: editForm.value.hostname })
+    ElMessage.success('主机名已更新')
+    editDialogVisible.value = false
+    await fetchAgent()
+  } catch (e) {
+    ElMessage.error('主机名更新失败')
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <style scoped>
